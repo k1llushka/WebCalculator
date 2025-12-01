@@ -6,11 +6,6 @@ on:
   pull_request:
     branches: [ "main" ]
 
-env:
-  DOTNET_VERSION: '8.0.x'
-  PROJECT_PATH: 'src/WebCalculator'  # ИСПРАВЛЕНО!
-  TEST_PATH: 'tests/WebCalculator.Tests'  # ИСПРАВЛЕНО!
-
 jobs:
   setup:
     name: 💻 Подготовка окружения
@@ -22,32 +17,47 @@ jobs:
 
     - name: 📁 Проверяем структуру проекта
       run: |
-        echo "Проверяем наличие всех файлов..."
-        find . -type f -name "*.csproj" | head -20
+        echo "=== СТРУКТУРА ПРОЕКТА ==="
+        echo "Текущая папка: $(pwd)"
         echo "---"
+        echo "Содержимое корня:"
+        ls -la
+        echo "---"
+        echo "Содержимое src:"
         ls -la src/ || echo "Папки src не существует"
         echo "---"
+        echo "Содержимое tests:"
         ls -la tests/ || echo "Папки tests не существует"
+        echo "---"
+        echo "Ищем .csproj файлы:"
+        find . -name "*.csproj" -type f 2>/dev/null || echo ".csproj файлы не найдены"
 
     - name: ⚙️ Устанавливаем .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+        dotnet-version: '8.0.x'
 
     - name: 📦 Восстанавливаем зависимости
       run: |
-        # Сначала находим все .csproj файлы
-        echo "Найденные .csproj файлы:"
-        find . -name "*.csproj" -type f
+        echo "=== ВОССТАНОВЛЕНИЕ ЗАВИСИМОСТЕЙ ==="
         
-        echo "---"
-        echo "Восстанавливаем зависимости..."
-        # Восстанавливаем все проекты
-        dotnet restore || echo "Ошибка при restore"
+        # Проверяем наличие файлов проекта
+        if [ -f "src/WebCalculator/WebCalculator.csproj" ]; then
+          echo "Восстанавливаем основной проект..."
+          dotnet restore src/WebCalculator/WebCalculator.csproj
+        else
+          echo "⚠️ Основной проект не найден: src/WebCalculator/WebCalculator.csproj"
+          echo "Ищем проекты..."
+          find . -name "*.csproj" -type f
+          exit 1
+        fi
         
-        echo "---"
-        echo "Проверяем восстановление..."
-        find . -name "project.assets.json" -type f | head -10
+        if [ -f "tests/WebCalculator.Tests/WebCalculator.Tests.csproj" ]; then
+          echo "Восстанавливаем тестовый проект..."
+          dotnet restore tests/WebCalculator.Tests/WebCalculator.Tests.csproj
+        else
+          echo "⚠️ Тестовый проект не найден: tests/WebCalculator.Tests/WebCalculator.Tests.csproj"
+        fi
 
   build:
     name: 🔨 Сборка проекта
@@ -61,31 +71,26 @@ jobs:
     - name: ⚙️ Устанавливаем .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+        dotnet-version: '8.0.x'
 
     - name: 📦 Восстанавливаем зависимости
-      run: dotnet restore
+      run: |
+        echo "Восстанавливаем зависимости..."
+        dotnet restore src/WebCalculator/WebCalculator.csproj
 
     - name: 🔨 Собираем проект
       run: |
-        # Проверяем существование проекта
-        if [ ! -f "src/WebCalculator/WebCalculator.csproj" ]; then
-          echo "Файл проекта не найден! Ищем..."
-          find . -name "*.csproj" -type f
-          exit 1
-        fi
-        
         echo "Собираем проект..."
-        dotnet build src/WebCalculator --configuration Release
-
-    - name: 🔍 Проверяем результат сборки
-      run: |
-        echo "Проверяем собранные файлы..."
+        dotnet build src/WebCalculator/WebCalculator.csproj --configuration Release
+        
+        echo "=== ПРОВЕРКА СБОРКИ ==="
+        echo "Собранные файлы:"
         if [ -d "src/WebCalculator/bin/Release/net8.0/" ]; then
           ls -la src/WebCalculator/bin/Release/net8.0/
+          echo "✅ Сборка успешна!"
         else
-          echo "Папка сборки не найдена, ищем..."
-          find . -name "*.dll" -type f | head -10
+          echo "❌ Папка сборки не найдена!"
+          exit 1
         fi
 
     - name: 💾 Сохраняем собранное приложение
@@ -108,22 +113,23 @@ jobs:
     - name: ⚙️ Устанавливаем .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+        dotnet-version: '8.0.x'
 
     - name: 📦 Восстанавливаем зависимости
-      run: dotnet restore
+      run: |
+        dotnet restore tests/WebCalculator.Tests/WebCalculator.Tests.csproj
 
     - name: ✓ Запускаем unit-тесты
       run: |
-        # Сначала проверяем наличие тестового проекта
-        if [ ! -f "tests/WebCalculator.Tests/WebCalculator.Tests.csproj" ]; then
-          echo "Тестовый проект не найден! Ищем..."
-          find . -name "*.Tests.csproj" -type f
-          exit 1
-        fi
-        
         echo "Запускаем тесты..."
-        dotnet test tests/WebCalculator.Tests --verbosity normal --logger "trx"
+        dotnet test tests/WebCalculator.Tests/WebCalculator.Tests.csproj --verbosity normal --logger "trx"
+        
+        echo "=== РЕЗУЛЬТАТЫ ТЕСТОВ ==="
+        # Проверяем результаты тестов
+        if [ -d "tests/WebCalculator.Tests/TestResults" ]; then
+          echo "Файлы результатов тестов:"
+          ls -la tests/WebCalculator.Tests/TestResults/
+        fi
 
     - name: 📊 Сохраняем результаты тестов
       if: always()
@@ -145,14 +151,18 @@ jobs:
     - name: ⚙️ Устанавливаем .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+        dotnet-version: '8.0.x'
 
     - name: 📦 Восстанавливаем зависимости
-      run: dotnet restore
+      run: dotnet restore src/WebCalculator/WebCalculator.csproj
 
     - name: 📦 Публикуем приложение
       run: |
-        dotnet publish src/WebCalculator -c Release -o ./publish --self-contained false
+        echo "Публикуем приложение..."
+        dotnet publish src/WebCalculator/WebCalculator.csproj -c Release -o ./publish --self-contained false
+        
+        echo "=== СОДЕРЖИМОЕ ПУБЛИКАЦИИ ==="
+        ls -la ./publish/
 
     - name: 📁 Архивируем приложение
       run: |
